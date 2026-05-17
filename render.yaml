@@ -1,12 +1,28 @@
+# Phase 1A staging: free-tier Web Service + EXTERNAL Postgres (Neon).
+#
+# Render removed their free Postgres tier in 2024 (minimum paid plan is
+# Basic-256mb @ $7/mo). To keep Phase 1A on a no-card-on-file footprint,
+# we point DATABASE_URL at a Neon free tier database (neon.tech,
+# 0.5 GB storage, scales-to-zero compute). Jamai creates that DB in the
+# Neon UI and pastes the connection string into the Render dashboard
+# after this Blueprint applies — see DEPLOY-CHECKLIST.md.
+#
+# Phase 1B will upgrade Web Service → starter and either move Postgres
+# back to Render Basic-256mb or stay on Neon Launch ($19/mo) — TBD.
+
 services:
   - type: web
     name: aisb-invoicer
     runtime: node
-    plan: starter
+    plan: free
     region: ohio
     branch: main
     rootDir: .
-    buildCommand: npm install && npx prisma generate && npx prisma db push --accept-data-loss --skip-generate && npm run build
+    # Free instances spin down on idle (~15 min) and back up on first
+    # request (~30-60s). Build runs once per deploy, not on cold start;
+    # prisma migrate deploy is idempotent (skips already-applied
+    # migrations) so re-running it on the next deploy is safe.
+    buildCommand: npm install && npx prisma generate && npx prisma migrate deploy && npm run build
     startCommand: npm start
     healthCheckPath: /api/health
     autoDeploy: true
@@ -21,15 +37,8 @@ services:
         value: "AISB Invoicer <noreply@aisolutionsbb.com>"
       - key: SENDGRID_API_KEY
         sync: false
+      # External Postgres — paste the Neon connection string here in the
+      # Render dashboard after the Blueprint applies. Format:
+      #   postgresql://user:pass@ep-xxx.us-east-2.aws.neon.tech/aisb_invoicer?sslmode=require
       - key: DATABASE_URL
-        fromDatabase:
-          name: aisb-invoicer-db
-          property: connectionString
-
-databases:
-  - name: aisb-invoicer-db
-    plan: basic-256mb
-    region: ohio
-    databaseName: aisb_invoicer
-    user: aisb_invoicer
-    postgresMajorVersion: "16"
+        sync: false
