@@ -2,8 +2,16 @@ import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { withTenant, UnauthorizedError } from "@/lib/tenant";
 import { createInvoiceSchema, computeTotals } from "@/lib/validation";
+import { canCreateInvoices } from "@/lib/plans";
 
 export const dynamic = "force-dynamic";
+
+class TrialOrSubscriptionRequiredError extends Error {
+  constructor() {
+    super("Trial expired and no active subscription");
+    this.name = "TrialOrSubscriptionRequiredError";
+  }
+}
 
 export async function GET() {
   try {
@@ -44,9 +52,20 @@ export async function POST(req: Request) {
       return db.$transaction(async (tx) => {
         const tenant = await tx.tenant.findUnique({
           where: { id: tenantId },
-          select: { businessName: true, address: true, email: true, phone: true, nextInvoiceNumber: true },
+          select: {
+            businessName: true,
+            address: true,
+            email: true,
+            phone: true,
+            nextInvoiceNumber: true,
+            subscriptionStatus: true,
+            trialEndsAt: true,
+          },
         });
         if (!tenant) throw new Error("Tenant missing");
+        if (!canCreateInvoices(tenant)) {
+          throw new TrialOrSubscriptionRequiredError();
+        }
 
         const updated = await tx.tenant.update({
           where: { id: tenantId },
@@ -86,6 +105,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ id: invoice.id, number: invoice.number });
   } catch (e) {
     if (e instanceof UnauthorizedError) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (e instanceof TrialOrSubscriptionRequiredError) {
+      return NextResponse.json(
+        { error: "Trial expired. Subscribe to keep creating invoices.", code: "subscription_required" },
+        { status: 402 },
+      );
+    }
     console.error("Invoice create failed", e);
     return NextResponse.json({ error: "Failed to create invoice" }, { status: 500 });
   }

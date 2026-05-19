@@ -32,6 +32,8 @@ model Tenant {
   subscriptionStatus   String    @default("trialing")
   subscriptionPlan     String    @default("starter")
   trialEndsAt          DateTime?
+  currentPeriodEnd     DateTime?
+  cancelAtPeriodEnd    Boolean   @default(false)
 
   users    User[]
   invoices Invoice[]

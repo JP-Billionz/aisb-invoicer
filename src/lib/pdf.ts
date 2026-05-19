@@ -20,6 +20,9 @@ export interface InvoicePdfData {
   vatApplied: boolean;
 
   notes?: string | null;
+
+  /** Render the "Powered by AI Solutions Barbados" footer. Starter: true. Growth/Pro: false. */
+  showPoweredByFooter: boolean;
 }
 
 const BRAND_PURPLE = [124, 58, 237] as const;
@@ -191,12 +194,14 @@ export function renderInvoicePdf(data: InvoicePdfData): Uint8Array {
     doc.text(wrapped, margin, ny + 14);
   }
 
-  // Footer
-  doc.setFont("helvetica", "italic");
-  doc.setFontSize(8);
-  doc.setTextColor(...INK_400);
-  const footer = "Powered by AI Solutions Barbados";
-  doc.text(footer, pageW / 2 - doc.getTextWidth(footer) / 2, pageH - 24);
+  // Footer (Starter-only — Growth/Pro white-label removes it)
+  if (data.showPoweredByFooter) {
+    doc.setFont("helvetica", "italic");
+    doc.setFontSize(8);
+    doc.setTextColor(...INK_400);
+    const footer = "Powered by AI Solutions Barbados";
+    doc.text(footer, pageW / 2 - doc.getTextWidth(footer) / 2, pageH - 24);
+  }
 
   return new Uint8Array(doc.output("arraybuffer"));
 }

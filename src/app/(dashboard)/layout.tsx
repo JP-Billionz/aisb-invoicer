@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth, signOut } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { canCreateInvoices } from "@/lib/plans";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
@@ -15,6 +16,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const daysLeft = tenant?.trialEndsAt
     ? Math.max(0, Math.ceil((tenant.trialEndsAt.getTime() - Date.now()) / (24 * 60 * 60 * 1000)))
     : 0;
+  const canCreate = tenant ? canCreateInvoices(tenant) : false;
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -27,6 +29,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
           <nav className="flex gap-4 text-sm">
             <Link href="/invoices" className="text-ink-300 hover:text-ink-100">Invoices</Link>
             <Link href="/invoices/new" className="text-ink-300 hover:text-ink-100">New invoice</Link>
+            <Link href="/billing" className="text-ink-300 hover:text-ink-100">Billing</Link>
             <Link href="/settings" className="text-ink-300 hover:text-ink-100">Settings</Link>
           </nav>
         </div>
@@ -45,7 +48,20 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
       {tenant?.subscriptionStatus === "trialing" && daysLeft > 0 && (
         <div className="bg-brand-purple/20 border-b border-brand-purple/40 px-6 py-2 text-sm text-center">
-          {daysLeft} day{daysLeft === 1 ? "" : "s"} left in trial. Stripe billing lands in Phase 1B.
+          {daysLeft} day{daysLeft === 1 ? "" : "s"} left in trial.{" "}
+          <Link href="/billing" className="font-semibold text-brand-purple hover:underline">
+            Subscribe now
+          </Link>
+        </div>
+      )}
+      {!canCreate && tenant && (
+        <div className="bg-red-500/20 border-b border-red-500/40 px-6 py-2 text-sm text-center">
+          {tenant.subscriptionStatus === "trialing"
+            ? "Your trial has ended. Existing invoices remain available; new invoice creation is locked until you subscribe."
+            : "Your subscription is not active. New invoice creation is locked until billing is restored."}{" "}
+          <Link href="/billing" className="font-semibold text-red-200 underline">
+            Open billing
+          </Link>
         </div>
       )}
 

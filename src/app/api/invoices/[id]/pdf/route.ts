@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { withTenant, UnauthorizedError } from "@/lib/tenant";
 import { renderInvoicePdf } from "@/lib/pdf";
+import { PLANS, isPlanSlug } from "@/lib/plans";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -14,13 +15,18 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
       if (!invoice) return null;
       const tenant = await db.tenant.findUnique({
         where: { id: tenantId },
-        select: { invoiceNumberPrefix: true },
+        select: { invoiceNumberPrefix: true, subscriptionPlan: true },
       });
-      return { invoice, prefix: tenant?.invoiceNumberPrefix ?? null };
+      return {
+        invoice,
+        prefix: tenant?.invoiceNumberPrefix ?? null,
+        plan: tenant?.subscriptionPlan ?? "starter",
+      };
     });
 
     if (!result) return NextResponse.json({ error: "Not found" }, { status: 404 });
-    const { invoice, prefix } = result;
+    const { invoice, prefix, plan } = result;
+    const showPoweredByFooter = isPlanSlug(plan) ? PLANS[plan].showsPoweredByFooter : true;
 
     const items = (invoice.items as { description: string; qty: number; rate: number }[]) ?? [];
     const pdf = renderInvoicePdf({
@@ -48,6 +54,7 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
       total: Number(invoice.total),
       vatApplied: invoice.vatApplied,
       notes: invoice.notes,
+      showPoweredByFooter,
     });
 
     const filename = `AISB_Invoice_${prefix ?? ""}${invoice.number}.pdf`;
