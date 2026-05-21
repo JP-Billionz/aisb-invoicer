@@ -22,7 +22,11 @@ services:
     # request (~30-60s). Build runs once per deploy, not on cold start;
     # prisma migrate deploy is idempotent (skips already-applied
     # migrations) so re-running it on the next deploy is safe.
-    buildCommand: npm install && npx prisma generate && npx prisma migrate deploy && npm run build
+    # NODE_ENV=production (set below) tells npm to skip devDependencies,
+    # but tailwindcss / postcss / autoprefixer are needed at `next build`
+    # time to compile globals.css. --include=dev forces npm to install
+    # them anyway; the runtime image still serves under NODE_ENV=production.
+    buildCommand: npm install --include=dev && npx prisma generate && npx prisma migrate deploy && npm run build
     startCommand: npm start
     healthCheckPath: /api/health
     autoDeploy: true
