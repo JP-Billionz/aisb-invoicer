@@ -1,11 +1,63 @@
 import NextAuth from "next-auth";
 import type { NextAuthConfig } from "next-auth";
 import { PrismaAdapter } from "@auth/prisma-adapter";
+import type { Adapter, AdapterUser } from "@auth/core/adapters";
 import { prisma } from "./db";
 import { sendMagicLink } from "./email";
 
+const TRIAL_DAYS = 14;
+
+function deriveTenantName(email: string): string {
+  const domain = email.split("@")[1];
+  const root = domain?.split(".")[0];
+  if (!root) return email;
+  return root.charAt(0).toUpperCase() + root.slice(1);
+}
+
+// Auth.js's PrismaAdapter ships a default createUser that writes only
+// { email, emailVerified } — which Prisma rejects because User.tenantId
+// is required (NOT NULL) and has no default. Self-serve signup = a brand
+// new Tenant per email, so we override createUser to provision the
+// Tenant first and link the User to it in one transaction.
+const baseAdapter = PrismaAdapter(prisma);
+
+const adapter: Adapter = {
+  ...baseAdapter,
+  async createUser(data: AdapterUser): Promise<AdapterUser> {
+    const trialEndsAt = new Date(Date.now() + TRIAL_DAYS * 24 * 60 * 60 * 1000);
+    const user = await prisma.$transaction(async (tx) => {
+      const tenant = await tx.tenant.create({
+        data: {
+          businessName: deriveTenantName(data.email),
+          email: data.email,
+          subscriptionStatus: "trialing",
+          trialEndsAt,
+          // nextInvoiceNumber defaults to 10027 in the schema.
+        },
+      });
+      return tx.user.create({
+        data: {
+          email: data.email,
+          emailVerified: data.emailVerified,
+          name: data.name,
+          image: data.image,
+          tenantId: tenant.id,
+          role: "owner",
+        },
+      });
+    });
+    return {
+      id: user.id,
+      email: user.email,
+      emailVerified: user.emailVerified,
+      name: user.name,
+      image: user.image,
+    };
+  },
+};
+
 export const authConfig: NextAuthConfig = {
-  adapter: PrismaAdapter(prisma),
+  adapter,
   session: { strategy: "database" },
   pages: {
     signIn: "/signin",
@@ -25,23 +77,6 @@ export const authConfig: NextAuthConfig = {
       options: {},
     },
   ],
-  events: {
-    async createUser({ user }) {
-      if (!user.id || !user.email) return;
-      const tenant = await prisma.tenant.create({
-        data: {
-          businessName: user.email.split("@")[0],
-          email: user.email,
-          subscriptionStatus: "trialing",
-          trialEndsAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
-        },
-      });
-      await prisma.user.update({
-        where: { id: user.id },
-        data: { tenantId: tenant.id, role: "owner" },
-      });
-    },
-  },
   callbacks: {
     async session({ session, user }) {
       const dbUser = await prisma.user.findUnique({
